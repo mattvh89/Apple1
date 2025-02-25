@@ -13,9 +13,9 @@ Emu::Apple1::Apple1()
     //m_cpu.denatureHexText("roms/wozmon.txt", "roms/wozmon1.txt");
     //m_cpu.denatureHexText("roms/basic.txt", "roms/basic1.txt");
     //m_cpu.denatureHexText("roms/wozaci.txt", "roms/wozaci1.txt");
-	m_cpu.loadProgram2("roms/basic1.txt", BASIC_ENTRY);
-	m_cpu.loadProgram2("roms/wozaci1.txt", WOZACI_ENTRY);
-	m_cpu.loadProgram2("roms/wozmon1.txt", WOZMON_ENTRY);
+    m_cpu.loadProgram2("roms/basic1.txt", BASIC_ENTRY);
+    m_cpu.loadProgram2("roms/wozaci1.txt", WOZACI_ENTRY);
+    m_cpu.loadProgram2("roms/wozmon1.txt", WOZMON_ENTRY);
     m_cpu.setProgramCounter(WOZMON_ENTRY);
 
     m_stdInHandle = GetStdHandle(STD_INPUT_HANDLE);
@@ -196,9 +196,6 @@ void Emu::Apple1::mmioRegisterMonitor()
     if (m_cpu.getInstructionName() == "STA" and m_cpu.getAddressValue() == DISPLAY_OUTPUT_REGISTER)
     {
         char outputChar = std::toupper(static_cast<char>(m_cpu.busRead(DISPLAY_OUTPUT_REGISTER) & 0x7F));
-
-        //std::cout << ' ';
-        //SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);
 
         if (outputChar == CR)
         {
