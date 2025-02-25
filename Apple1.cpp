@@ -3,15 +3,18 @@
 #include <iostream>
 #include <Windows.h>
 #include <ctime>
+#include <chrono>
+#include <thread>
 
 Emu::Apple1::Apple1()
-    : m_cursorPos{ 0, 0 }, m_stdInHandle(NULL), m_stdOutHandle(NULL), m_running(true), m_onStartup(true)
+    : m_cursorPos{ 0, 0 }, m_stdInHandle(NULL), m_stdOutHandle(NULL), m_running(true), m_onStartup(true), m_throttled(true)
 {
-    for (Word i = 0; i < 0xFFFF; ++i) m_cpu.getBus()[i] = 0xFF;
+    //for (Word i = 0; i < 0xFFFF; ++i) m_cpu.getBus()[i] = 0x0F;
     //m_cpu.denatureHexText("roms/wozmon.txt", "roms/wozmon1.txt");
     //m_cpu.denatureHexText("roms/basic.txt", "roms/basic1.txt");
+    //m_cpu.denatureHexText("roms/wozaci.txt", "roms/wozaci1.txt");
 	m_cpu.loadProgram2("roms/basic1.txt", BASIC_ENTRY);
-	m_cpu.loadProgram2("roms/wozaci.txt", WOZACI_ENTRY);
+	m_cpu.loadProgram2("roms/wozaci1.txt", WOZACI_ENTRY);
 	m_cpu.loadProgram2("roms/wozmon1.txt", WOZMON_ENTRY);
     m_cpu.setProgramCounter(WOZMON_ENTRY);
 
@@ -24,6 +27,16 @@ Emu::Apple1::Apple1()
     mode &= ~ENABLE_PROCESSED_INPUT; // Prevent special key processing (Ctrl+C, etc.)
     SetConsoleMode(m_stdInHandle, mode);
 
+    CONSOLE_FONT_INFOEX cfi;
+    cfi.cbSize = sizeof(CONSOLE_FONT_INFOEX);
+    if (GetCurrentConsoleFontEx(m_stdOutHandle, FALSE, &cfi))
+    {
+        cfi.dwFontSize.X = 24;  // Width of the font (try adjusting these values)
+        cfi.dwFontSize.Y = 24; // Height of the font (try adjusting these values)
+        wcscpy_s(cfi.FaceName, L"Lucida Console");  // Set the font to Lucida Console
+        SetCurrentConsoleFontEx(m_stdOutHandle, FALSE, &cfi);
+    }
+
     // Hide the cursor (Apple 1 had no blinking cursor)
     CONSOLE_CURSOR_INFO cci;
     GetConsoleCursorInfo(m_stdOutHandle, &cci);
@@ -31,11 +44,16 @@ Emu::Apple1::Apple1()
     SetConsoleCursorInfo(m_stdOutHandle, &cci);
 
     // Set console screen buffer size to match Apple 1 (40x24)
-    COORD bufferSize = { SCREEN_CHAR_WIDTH, SCREEN_CHAR_HEIGHT };
+    COORD bufferSize;// = { SCREEN_CHAR_WIDTH, SCREEN_CHAR_HEIGHT };
+    bufferSize.X = SCREEN_CHAR_WIDTH;
+    bufferSize.Y = SCREEN_CHAR_HEIGHT;
     SetConsoleScreenBufferSize(m_stdOutHandle, bufferSize);
 
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo(m_stdOutHandle, &csbi);
+
     // Set window size to 40x24 (Apple 1 display size)
-    SMALL_RECT windowSize = { 0, 0, 39, 23 };
+    SMALL_RECT windowSize = { 0, 0, csbi.dwSize.X, csbi.dwSize.Y};
     SetConsoleWindowInfo(m_stdOutHandle, TRUE, &windowSize);
 
     // Set text color to green (Apple 1 used monochrome green monitors)
@@ -43,6 +61,8 @@ Emu::Apple1::Apple1()
 
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
 
+    // The apple 1 starts with random values of the display buffer, I'm just going to simulate this because there's nothing
+    // added by emulating this buffer. It's essentially the buffer of the console.
     for (size_t y = 0; y < SCREEN_CHAR_HEIGHT; ++y)
     {
         for (size_t x = 0; x < SCREEN_CHAR_WIDTH; ++x)
@@ -60,15 +80,18 @@ Emu::Apple1::Apple1()
 
 int Emu::Apple1::run()
 {
-    LARGE_INTEGER frequency, start, now;
+    LARGE_INTEGER frequency, start, now, displayFlagStart, displayFrequency;
     Byte clockCount = 0;
-    bool cursorFlag = false;
+    bool cursorFlag = false, displayFlag = false;
 
+    QueryPerformanceFrequency(&displayFrequency);
     QueryPerformanceFrequency(&frequency);
     QueryPerformanceCounter(&start);
+    QueryPerformanceCounter(&displayFlagStart);
 
     while (m_running)
     {
+        
         // Need to check for input first so we can reset after start up
         this->readKeyboard();
         // if the apple1 has been started but not reset yet it can't do anything
@@ -80,12 +103,25 @@ int Emu::Apple1::run()
         // Flash cursor
         QueryPerformanceCounter(&now);
         double elapsed = static_cast<double>(now.QuadPart - start.QuadPart) / frequency.QuadPart;
+        double displayFlagElapsed = static_cast<double>(now.QuadPart - displayFlagStart.QuadPart) / displayFrequency.QuadPart;
+
+        if (displayFlagElapsed > .01)
+        {
+            if (displayFlag) Bits<Byte>::SetBit(m_cpu.getBus()[DISPLAY_OUTPUT_REGISTER], LastBit<Byte>);
+            else Bits<Byte>::ClearBit(m_cpu.getBus()[DISPLAY_OUTPUT_REGISTER], LastBit<Byte>);
+            displayFlag = !displayFlag;
+            QueryPerformanceCounter(&displayFlagStart);
+        }
+        
+
         if (elapsed >= 0.5) // half a second has passed
         {
             if (cursorFlag) std::cout << ' ';
             else            std::cout << "@";
             cursorFlag = !cursorFlag;
             SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);
+
+            if (clockCount > 500) Sleep((elapsed - clockCount) * 1000);
 
             // Reset the start time.
             QueryPerformanceCounter(&start);
@@ -98,22 +134,6 @@ int Emu::Apple1::run()
         // Check for remaining cycles to run MMIO operations
         if (m_cpu.getCycles() == 0)
             this->mmioRegisterMonitor();
-
-        // Wait if too many cycles have been processed (1 MHz timing)
-        // The clock runs at 1 MHz, so each cycle should take 1 microsecond (1 µs)
-        // If you've executed too many cycles, we adjust the sleep duration to maintain proper speed
-        elapsed = static_cast<double>(now.QuadPart - start.QuadPart) / frequency.QuadPart;
-        if (elapsed < 1.0 && clockCount >= 1000)
-        {
-            // If 1000 cycles have passed, it means 1 millisecond has passed
-            // Sleep the difference between elapsed time and 1ms
-            double sleepDuration = 1.0 - elapsed;
-            if (sleepDuration > 0)
-                Sleep(static_cast<DWORD>(sleepDuration * 1000));  // Convert seconds to milliseconds
-
-            // Reset the clock count
-            clockCount = 0;
-        }
     }
 
     return 0;
@@ -134,23 +154,18 @@ char Emu::Apple1::readKeyboard()
             if (vKey == VK_F1)                                                              // Clear screen button
             {
                 system("cls");
-                m_cursorPos.X = 0;
-                m_cursorPos.Y = 0;
-                SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);
             }
             else
             if(vKey == VK_F2)                                                               // Reset button
-            {
-                m_onStartup = false;
-                m_cpu.reset();
-                // Clear all of the ram
-                for (Word i = 0; i < 0xFFFF; ++i) m_cpu.getBus()[i] = 0xFF;
-                // Reload the programs incase values were overwritten.
-                // It should return the same state as when it is turned on and reset
-                m_cpu.loadProgram2("roms/basic1.txt", BASIC_ENTRY);
-                m_cpu.loadProgram2("roms/wozaci.txt", WOZACI_ENTRY);
+            {                                                                               // The reset button on the Apple 1 does not clear the ram.
+                std::cout << ' ';                                                           // clear the cursor if it's there or it will be left on the screen
+                m_onStartup = false;                                                        // if this is the first time starting, this will stop the program blocking
+                m_cpu.reset();                                                              // reset the cpu
+                m_cpu.loadProgram2("roms/basic1.txt", BASIC_ENTRY);                         // restore the programs incase they were over written
+                m_cpu.loadProgram2("roms/wozaci1.txt", WOZACI_ENTRY);
                 m_cpu.loadProgram2("roms/wozmon1.txt", WOZMON_ENTRY);
-                m_cpu.setProgramCounter(WOZMON_ENTRY);
+                // program counter is successfully reset from the reset vector set by the wozmon, 
+                // so calling m_cpu.reset() properly sets the program counter. Now just reset the cursor
                 m_cursorPos.X = 0;
                 m_cursorPos.Y = 0;
                 SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);
@@ -159,6 +174,11 @@ char Emu::Apple1::readKeyboard()
             if(vKey == VK_F3)                                                               // Quit button
             {
                 m_running = false;
+            }
+            else
+            if(vKey == VK_F4)
+            {
+                m_throttled = !m_throttled;
             }
 
             // We have to write the key to the keyboard input register with the last bit set.
@@ -177,20 +197,20 @@ void Emu::Apple1::mmioRegisterMonitor()
     {
         char outputChar = std::toupper(static_cast<char>(m_cpu.busRead(DISPLAY_OUTPUT_REGISTER) & 0x7F));
 
-        std::cout << ' ';
-        SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);
+        //std::cout << ' ';
+        //SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);
 
         if (outputChar == CR)
         {
             std::cout << std::endl;
-            if (++m_cursorPos.Y > SCREEN_CHAR_HEIGHT) m_cursorPos.Y = 0;
+            if (++m_cursorPos.Y >= SCREEN_CHAR_HEIGHT) m_cursorPos.Y = 0;
             m_cursorPos.X = 0;
         }
         else     
         if (outputChar >= 32 and outputChar <= 126)
         {
             std::cout << outputChar;
-            if (++m_cursorPos.X > SCREEN_CHAR_WIDTH) m_cursorPos.X = 0;
+            if (++m_cursorPos.X > SCREEN_CHAR_WIDTH - 1) m_cursorPos.X = 0;
         }
         SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);
  
