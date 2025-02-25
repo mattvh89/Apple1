@@ -29,7 +29,7 @@ This will store those opcodes at memory location 0000. This is the test program 
 Type: R <ret>
 
 And the program should start executing, continually printing all of the characters. Press F2 to reset and then F1 to clear the screen.
-This will clear the program from memory
+This will NOT clear the program from memory
 
 A1 ASM is stored at E000. Type:
 E000R <ret> to enter the assembler.
