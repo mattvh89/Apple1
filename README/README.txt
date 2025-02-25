@@ -4,9 +4,13 @@ Project: Apple 1 emulator in C++
 Contact: matt.van.helden@hotmail.com
 ------------------------------------------------------------------------------------------------------------------------------------------------
 
-Thanks for checking out my Apple 1 emulator. This is just a simplified manual to get you up and running. Here are some of the basic functions:
+Thanks for checking out my Apple 1 emulator. This is just a simplified manual to get you up and running. 
 
+First you'll probably just need to set up your console properties. Run the program and right click on the toolbar of the console and select properties. 
+Change the width to 40 and the height to 24. Also, if the font doesn't change you should make it Lucida Console and up the size to probably 24pt. That
+will help make sure that it looks right. This shouldn't change all your consoles for all of time, just for that program.
 
+Here are some of the basic functions:
 
 The apple 1 starts with the screen buffer full of random values. 
 
