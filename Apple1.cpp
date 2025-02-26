@@ -13,9 +13,9 @@ Emu::Apple1::Apple1()
     //m_cpu.denatureHexText("roms/wozmon.txt", "roms/wozmon1.txt");
     //m_cpu.denatureHexText("roms/basic.txt", "roms/basic1.txt");
     //m_cpu.denatureHexText("roms/wozaci.txt", "roms/wozaci1.txt");
-    m_cpu.loadProgram2("roms/basic1.txt", BASIC_ENTRY);
-    m_cpu.loadProgram2("roms/wozaci1.txt", WOZACI_ENTRY);
-    m_cpu.loadProgram2("roms/wozmon1.txt", WOZMON_ENTRY);
+	m_cpu.loadProgram2("roms/basic1.txt", BASIC_ENTRY);                                                 // this is really the A1 assembler
+	m_cpu.loadProgram2("roms/wozaci1.txt", WOZACI_ENTRY);
+	m_cpu.loadProgram2("roms/wozmon1.txt", WOZMON_ENTRY);
     m_cpu.setProgramCounter(WOZMON_ENTRY);
 
     m_stdInHandle = GetStdHandle(STD_INPUT_HANDLE);
@@ -105,13 +105,20 @@ int Emu::Apple1::run()
         double elapsed = static_cast<double>(now.QuadPart - start.QuadPart) / frequency.QuadPart;
         double displayFlagElapsed = static_cast<double>(now.QuadPart - displayFlagStart.QuadPart) / displayFrequency.QuadPart;
 
-        if (displayFlagElapsed > .01)
+        // The bottlneck of the Apple 1 was the monitor, so we can emulate the speed of monitor by constantly flipping the last bit in the display output register
+        // This is how the Apple 1 monitor actually worked too so this is good emulation. F4 toggles this on and off. If off, we need to keep that bit cleared
+        if (m_throttled)
         {
-            if (displayFlag) Bits<Byte>::SetBit(m_cpu.getBus()[DISPLAY_OUTPUT_REGISTER], LastBit<Byte>);
-            else Bits<Byte>::ClearBit(m_cpu.getBus()[DISPLAY_OUTPUT_REGISTER], LastBit<Byte>);
-            displayFlag = !displayFlag;
-            QueryPerformanceCounter(&displayFlagStart);
+            if (displayFlagElapsed > .01)
+            {
+                if (displayFlag) Bits<Byte>::SetBit(m_cpu.getBus()[DISPLAY_OUTPUT_REGISTER], LastBit<Byte>);
+                else Bits<Byte>::ClearBit(m_cpu.getBus()[DISPLAY_OUTPUT_REGISTER], LastBit<Byte>);
+                displayFlag = !displayFlag;
+                QueryPerformanceCounter(&displayFlagStart);
+            }
         }
+        else
+            Bits<Byte>::ClearBit(m_cpu.getBus()[DISPLAY_OUTPUT_REGISTER], LastBit<Byte>);
         
 
         if (elapsed >= 0.5) // half a second has passed
@@ -120,8 +127,6 @@ int Emu::Apple1::run()
             else            std::cout << "@";
             cursorFlag = !cursorFlag;
             SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);
-
-            if (clockCount > 500) Sleep((elapsed - clockCount) * 1000);
 
             // Reset the start time.
             QueryPerformanceCounter(&start);
@@ -195,11 +200,14 @@ void Emu::Apple1::mmioRegisterMonitor()
 {
     if (m_cpu.getInstructionName() == "STA" and m_cpu.getAddressValue() == DISPLAY_OUTPUT_REGISTER)
     {
-        char outputChar = std::toupper(static_cast<char>(m_cpu.busRead(DISPLAY_OUTPUT_REGISTER) & 0x7F));
+        char outputChar = std::toupper(static_cast<char>(m_cpu.busRead(DISPLAY_OUTPUT_REGISTER) &0x7F));
+
+        //std::cout << ' ';
+        //SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);
 
         if (outputChar == CR)
         {
-            std::cout << std::endl;
+            std::cout << ' ' << std::endl;
             if (++m_cursorPos.Y >= SCREEN_CHAR_HEIGHT) m_cursorPos.Y = 0;
             m_cursorPos.X = 0;
         }
@@ -211,7 +219,6 @@ void Emu::Apple1::mmioRegisterMonitor()
         }
         SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);
  
-        m_cpu.busWrite(DISPLAY_OUTPUT_REGISTER,  0x00);
         Bits<Byte>::ClearBit(m_cpu.getBus()[KEYBOARD_CNTRL_REGISTER], LastBit<Byte>);
     }
 }
