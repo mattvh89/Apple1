@@ -7,16 +7,10 @@ to make my own 6502 emulator, using his opcode table as the template. Superficia
 */
 
 #pragma once
-#include "Bit.h"
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <iomanip>
 #include <vector>
 #include <string>
-#include <cstdlib>
-#include <assert.h>
 #include "Debug.h"
+#include "Bit.h"
 
 // Define reserved regions in memory
 #define STACK_TOP    0x01FF	// storing using the post decrement operator, retreiving uses the pre incremenet operator
