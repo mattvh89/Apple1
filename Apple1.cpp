@@ -63,26 +63,23 @@ Emu::Apple1::Apple1()
 
     // The apple 1 starts with random values of the display buffer, I'm just going to simulate this because there's nothing
     // added by emulating this buffer. It's essentially the buffer of the console.
-    for (size_t y = 0; y < SCREEN_CHAR_HEIGHT; ++y)
+    for (size_t y = 0; y <= SCREEN_CHAR_HEIGHT; ++y)
     {
         for (size_t x = 0; x < SCREEN_CHAR_WIDTH; ++x)
         {
             // Generate a random printable ASCII character (uppercase letters, numbers, and some symbols)
-            char randomChar = static_cast<char>((std::rand() % 32) + 0x40); // Roughly simulates Apple 1 video memory noise
-
-            // Write to console at position (x, y)
-            COORD pos = { static_cast<SHORT>(x), static_cast<SHORT>(y) };
-            SetConsoleCursorPosition(m_stdOutHandle, pos);
+            char randomChar = static_cast<char>((std::rand() % (126 - 32) + 32)); // Roughly simulates Apple 1 video memory noise
             std::cout << randomChar;
         }
     }
+    //std::cout << Apple1_Title::A1_LINE1 << Apple1_Title::A1_LINE2 << Apple1_Title::A1_LINE3 << Apple1_Title::A1_LINE4 << Apple1_Title::A1_LINE5 << Apple1_Title::A1_LINE6 << Apple1_Title::A1_LINE7 << Apple1_Title::A1_LINE8 << Apple1_Title::A1_LINE9;
 }
 
 int Emu::Apple1::run()
 {
     LARGE_INTEGER frequency, start, now, displayFlagStart, displayFrequency;
     Byte clockCount = 0;
-    bool cursorFlag = false, displayFlag = false;
+    bool cursorFlag = false;
 
     QueryPerformanceFrequency(&displayFrequency);
     QueryPerformanceFrequency(&frequency);
@@ -100,7 +97,8 @@ int Emu::Apple1::run()
             Sleep(10);
             continue;
         }
-        // Flash cursor
+        
+        // Do timer stuff for Flashing the cursor and throttling the display rate
         QueryPerformanceCounter(&now);
         double elapsed = static_cast<double>(now.QuadPart - start.QuadPart) / frequency.QuadPart;
         double displayFlagElapsed = static_cast<double>(now.QuadPart - displayFlagStart.QuadPart) / displayFrequency.QuadPart;
@@ -108,12 +106,10 @@ int Emu::Apple1::run()
         // The bottlneck of the Apple 1 was the monitor, so we can emulate the speed of monitor by constantly flipping the last bit in the display output register
         // This is how the Apple 1 monitor actually worked too so this is good emulation. F4 toggles this on and off. If off, we need to keep that bit cleared
         if (m_throttled)
-        {
-            if (displayFlagElapsed > .01)
+        {   // the display ready flag bit should be read about 10x a minute, so flip it ever 5 hundreths of a second
+            if (displayFlagElapsed > .05)
             {
-                if (displayFlag) Bits<Byte>::SetBit(m_cpu.getBus()[DISPLAY_OUTPUT_REGISTER], LastBit<Byte>);
-                else Bits<Byte>::ClearBit(m_cpu.getBus()[DISPLAY_OUTPUT_REGISTER], LastBit<Byte>);
-                displayFlag = !displayFlag;
+                Bits<Byte>::ToggleBit(m_cpu.getBus()[DISPLAY_OUTPUT_REGISTER], LastBit<Byte>);  // Toggle the last bit of the display output register. This controls whether the monitor is available or not
                 QueryPerformanceCounter(&displayFlagStart);
             }
         }
@@ -132,9 +128,11 @@ int Emu::Apple1::run()
             QueryPerformanceCounter(&start);
         }
 
+        /*@Todo:
+         Need to slow the 6502 down to approximately 1000 clock cycles per second*/
         // read input, execute, and output
         m_cpu.clock();
-        ++clockCount;
+        //++clockCount;
 
         // Check for remaining cycles to run MMIO operations
         if (m_cpu.getCycles() == 0)
@@ -168,9 +166,8 @@ char Emu::Apple1::readKeyboard()
                 m_cpu.reset();                                                              // reset the cpu
                 m_cpu.loadProgram2("roms/basic1.txt", BASIC_ENTRY);                         // restore the programs incase they were over written
                 m_cpu.loadProgram2("roms/wozaci1.txt", WOZACI_ENTRY);
-                m_cpu.loadProgram2("roms/wozmon1.txt", WOZMON_ENTRY);
-                // program counter is successfully reset from the reset vector set by the wozmon, 
-                // so calling m_cpu.reset() properly sets the program counter. Now just reset the cursor
+                m_cpu.loadProgram2("roms/wozmon1.txt", WOZMON_ENTRY);                       // program counter is successfully reset from the reset vector set by the wozmon, 
+                                                                                            // so calling m_cpu.reset() properly sets the program counter. Now just reset the cursor
                 m_cursorPos.X = 0;
                 m_cursorPos.Y = 0;
                 SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);
@@ -185,12 +182,9 @@ char Emu::Apple1::readKeyboard()
             {
                 m_throttled = !m_throttled;
             }
+            m_cpu.busWrite(KEYBOARD_INPUT_REGISTER, static_cast<Byte>(std::toupper(key)) | 0x80);                   // We have to write the key to the keyboard input register with the last bit set.
 
-            // We have to write the key to the keyboard input register with the last bit set.
-            m_cpu.busWrite(KEYBOARD_INPUT_REGISTER, static_cast<Byte>(std::toupper(key)) | 0x80);
-
-            // Set the keyboard control register so the wozmon knows there's a key ready to be read
-            Bits<Byte>::SetBit(m_cpu.getBus()[KEYBOARD_CNTRL_REGISTER], LastBit<Byte>);
+            Bits<Byte>::SetBit(m_cpu.getBus()[KEYBOARD_CNTRL_REGISTER], LastBit<Byte>);                             // Set the keyboard control register so the wozmon knows there's a key ready to be read
         }
     }
     return 0x00;
@@ -200,25 +194,22 @@ void Emu::Apple1::mmioRegisterMonitor()
 {
     if (m_cpu.getInstructionName() == "STA" and m_cpu.getAddressValue() == DISPLAY_OUTPUT_REGISTER)
     {
-        char outputChar = std::toupper(static_cast<char>(m_cpu.busRead(DISPLAY_OUTPUT_REGISTER) &0x7F));
+        char outputChar = std::toupper(static_cast<char>(m_cpu.busRead(DISPLAY_OUTPUT_REGISTER) & 0x7F));           // read the key from the display output register, but we don't want the last bit
 
-        //std::cout << ' ';
-        //SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);
-
-        if (outputChar == CR)
+        if (outputChar == CR)                                                                                       // if it's carriage return 0x8D
         {
-            std::cout << ' ' << std::endl;
-            if (++m_cursorPos.Y >= SCREEN_CHAR_HEIGHT) m_cursorPos.Y = 0;
-            m_cursorPos.X = 0;
+            std::cout << ' ' << std::endl;                                                                          // erase a possible ghost @ cursor
+            if (++m_cursorPos.Y >= SCREEN_CHAR_HEIGHT) m_cursorPos.Y = 0;                                           // make sure we're within height of the screen
+            m_cursorPos.X = 0;                                                                                      // reset x coord
         }
         else     
-        if (outputChar >= 32 and outputChar <= 126)
-        {
+        if (outputChar >= 32 and outputChar <= 126)                                                                 // else it's a printable character so print it
+        {                                                                                                           // no need to erase the cursor because our character will
             std::cout << outputChar;
-            if (++m_cursorPos.X > SCREEN_CHAR_WIDTH - 1) m_cursorPos.X = 0;
+            if (++m_cursorPos.X > SCREEN_CHAR_WIDTH - 1) m_cursorPos.X = 0;                                         // make sure we're within the width of the screen
         }
-        SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);
+        SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);                                                      // set the cursor the cursor pos
  
-        Bits<Byte>::ClearBit(m_cpu.getBus()[KEYBOARD_CNTRL_REGISTER], LastBit<Byte>);
+        Bits<Byte>::ClearBit(m_cpu.getBus()[KEYBOARD_CNTRL_REGISTER], LastBit<Byte>);                               // clear the key board control register so the wozmon knows the character has been processed
     }
 }
