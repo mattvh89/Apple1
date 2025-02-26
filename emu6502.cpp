@@ -1,6 +1,10 @@
 #include "emu6502.h"
 #include <exception>
 #include <map>
+#include <fstream>
+#include <iostream>
+#include <exception>
+#include <iomanip>
 
 
 using namespace Emu;
@@ -147,6 +151,7 @@ size_t emu6502::fetch_and_execute()
 	return 0;
 }
 
+// Sipmly reads a text file of byte sized hexadecimal values
 int emu6502::loadProgram(const char* fname, const Word& addr)
 {
 	size_t counter = addr;
@@ -170,6 +175,7 @@ int emu6502::loadProgram(const char* fname, const Word& addr)
 	return PROGRAM_LOAD_SUCCESSFULL;
 }
 
+// Same as loadProgram but if the line starts with a memory address it is ignored e.g. FF00: a9 4c......
 int Emu::emu6502::loadProgram2(const char* fname, const Word& addr)
 {
 	size_t counter = addr;
@@ -197,6 +203,7 @@ int Emu::emu6502::loadProgram2(const char* fname, const Word& addr)
 	return 0;
 }
 
+// loads a binary rom
 int emu6502::loadProgramHex(const char* fname, const Word& addr)
 {
 	size_t counter = addr;
@@ -219,6 +226,7 @@ int emu6502::loadProgramHex(const char* fname, const Word& addr)
 	return PROGRAM_LOAD_SUCCESSFULL;
 }
 
+// Strips any leading memory addresses and creates a new file that can be loaded with loadProgram or loadProgram2
 int Emu::emu6502::denatureHexText(const char* fname, const char* fname_new)
 {
 	std::ifstream ifs(fname, std::ios::in);
@@ -414,7 +422,6 @@ Byte emu6502::IZY()
 /*			START
 * instruction definitions */
 
-// @ToDo: clear flags
 // add with carry
 // overflow = ~(a ^ arg) & (a ^ sum) & 0x80
 Byte emu6502::ADC()
@@ -437,7 +444,7 @@ Byte emu6502::ADC()
 }
 
 // Subtract with carry
-// same as adc once you invery the argument
+// same as adc once you invert the operand
 Byte emu6502::SBC()
 {
 	DEBUG_OUT("SBC");
@@ -448,7 +455,6 @@ Byte emu6502::SBC()
 
 	Word result = m_cpu.a.getCopy() + m_addrVal.getCopy() + m_cpu.flags.CheckBit(Flags::CARRY);
 
-	//checkFlag((static_cast<Byte>(result) ^ m_cpu.a.getCopy()) & ((static_cast<Byte>(result) ^ static_cast<Byte>(m_addrVal.getCopy()))), Flags::O_FLOW);
 	checkFlag(~(m_cpu.a.getCopy() ^ m_addrVal.getCopy()) & (m_cpu.a.getCopy() ^ result) & 0x80, Flags::O_FLOW);
 	m_cpu.a = result & 0xFF;
 
@@ -1007,8 +1013,6 @@ Byte emu6502::PHA()
 {
 	DEBUG_OUT("PHA");
 	m_bus[m_cpu.s--] = m_cpu.a.getCopy();
-	//m_addrVal = m_cpu.s.get();
-
 	return 0x00;
 }
 
@@ -1017,8 +1021,6 @@ Byte emu6502::PHP()
 {
 	DEBUG_OUT("PHP");
 	m_bus[m_cpu.s--] = m_cpu.flags.getCopy();
-	//m_addrVal = m_cpu.s.get();
-
 	return 0x00;
 }
 
@@ -1027,8 +1029,6 @@ Byte emu6502::PLA()
 {
 	DEBUG_OUT("PLA");
 	m_cpu.a = m_bus[++m_cpu.s];
-	//m_addrVal = m_cpu.s.get();
-
 	return 0x00;
 }
 
@@ -1037,8 +1037,6 @@ Byte emu6502::PLP()
 {
 	DEBUG_OUT("PLP");
 	m_cpu.flags = m_bus[++m_cpu.s];
-	//m_addrVal = m_cpu.s.get();
-
 	return 0x00;
 }
 
@@ -1179,6 +1177,7 @@ Byte emu6502::XXX()
 
 
 /* EXTRAS */
+// If the condition is met (true), the flag will be set, otherwise the flag is cleared. 
 void emu6502::checkFlag(bool condition, const Flags& flag)
 {
 	if (condition)
@@ -1199,6 +1198,9 @@ void emu6502::printMemoryRange(const size_t& start, const size_t& end) const
 	}
 }
 
+/*@Todo: 
+	Fix this
+*/
 void emu6502::disassembleText(const char* fname)
 {
 	struct AsmLine
