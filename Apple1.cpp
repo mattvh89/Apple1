@@ -9,7 +9,7 @@
 Emu::Apple1::Apple1()
     : m_cursorPos{ 0, 0 }, m_stdInHandle(NULL), m_stdOutHandle(NULL), m_running(true), m_onStartup(true), m_throttled(true)
 {
-    //for (Word i = 0; i < 0xFFFF; ++i) m_cpu.getBus()[i] = 0x0F;
+    for (Word i = 0; i < 0xFFFF; ++i) m_cpu.getBus()[i] = 0x00;
     //m_cpu.denatureHexText("roms/wozmon.txt", "roms/wozmon1.txt");
     //m_cpu.denatureHexText("roms/basic.txt", "roms/basic1.txt");
     //m_cpu.denatureHexText("roms/wozaci.txt", "roms/wozaci1.txt");
@@ -24,15 +24,15 @@ Emu::Apple1::Apple1()
     DWORD mode;
     GetConsoleMode(m_stdInHandle, &mode);
     mode &= ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT); // Disable Enter buffering & echo
-    mode &= ~ENABLE_PROCESSED_INPUT; // Prevent special key processing (Ctrl+C, etc.)
+    mode &= ~ENABLE_PROCESSED_INPUT;                  // Prevent special key processing (Ctrl+C, etc.)
     SetConsoleMode(m_stdInHandle, mode);
 
     CONSOLE_FONT_INFOEX cfi;
     cfi.cbSize = sizeof(CONSOLE_FONT_INFOEX);
     if (GetCurrentConsoleFontEx(m_stdOutHandle, FALSE, &cfi))
     {
-        cfi.dwFontSize.X = 24;  // Width of the font (try adjusting these values)
-        cfi.dwFontSize.Y = 24; // Height of the font (try adjusting these values)
+        cfi.dwFontSize.X = 24;
+        cfi.dwFontSize.Y = 24; 
         wcscpy_s(cfi.FaceName, L"Lucida Console");  // Set the font to Lucida Console
         SetCurrentConsoleFontEx(m_stdOutHandle, FALSE, &cfi);
     }
@@ -77,14 +77,16 @@ Emu::Apple1::Apple1()
 
 int Emu::Apple1::run()
 {
-    LARGE_INTEGER frequency, start, now, displayFlagStart, displayFrequency;
+    LARGE_INTEGER frequency, start, now, displayFlagStart, cpuStart, displayFrequency, cpuFrequency;
     Byte clockCount = 0;
     bool cursorFlag = false;
 
     QueryPerformanceFrequency(&displayFrequency);
     QueryPerformanceFrequency(&frequency);
+    QueryPerformanceFrequency(&cpuFrequency);
     QueryPerformanceCounter(&start);
     QueryPerformanceCounter(&displayFlagStart);
+    QueryPerformanceCounter(&cpuStart);
 
     while (m_running)
     {
@@ -94,28 +96,43 @@ int Emu::Apple1::run()
         // if the apple1 has been started but not reset yet it can't do anything
         if (m_onStartup)
         {
-            Sleep(10);
+            Sleep(100);
             continue;
         }
-        
+
+        // clock the cpu and process mmio registers
+        m_cpu.fetch_and_execute();
+        this->mmioRegisterMonitor();
+        clockCount += m_cpu.getCycles();
+
+
         // Do timer stuff for Flashing the cursor and throttling the display rate
         QueryPerformanceCounter(&now);
         double elapsed = static_cast<double>(now.QuadPart - start.QuadPart) / frequency.QuadPart;
         double displayFlagElapsed = static_cast<double>(now.QuadPart - displayFlagStart.QuadPart) / displayFrequency.QuadPart;
+        double cpuElapsed = static_cast<double>(now.QuadPart - cpuStart.QuadPart) / cpuFrequency.QuadPart;
 
         // The bottlneck of the Apple 1 was the monitor, so we can emulate the speed of monitor by constantly flipping the last bit in the display output register
         // This is how the Apple 1 monitor actually worked too so this is good emulation. F4 toggles this on and off. If off, we need to keep that bit cleared
         if (m_throttled)
-        {   // the display ready flag bit should be read about 10x a minute, so flip it ever 5 hundreths of a second
+        {   // the display ready flag bit should be ready about 10x a minute, so flip it every 5 hundreths of a second
             if (displayFlagElapsed > .05)
             {
                 Bits<Byte>::ToggleBit(m_cpu.getBus()[DISPLAY_OUTPUT_REGISTER], LastBit<Byte>);  // Toggle the last bit of the display output register. This controls whether the monitor is available or not
                 QueryPerformanceCounter(&displayFlagStart);
             }
+            // throttle the cpu to approximately 1000 clock cycles per second, or 100 cycles per .1 seconds
+            if (cpuElapsed > .1)
+            {
+                if (clockCount > 100)
+                    std::this_thread::sleep_for(std::chrono::milliseconds((clockCount - 100)));
+                clockCount = 0;
+                QueryPerformanceCounter(&cpuStart);
+            }
         }
         else
             Bits<Byte>::ClearBit(m_cpu.getBus()[DISPLAY_OUTPUT_REGISTER], LastBit<Byte>);
-        
+
 
         if (elapsed >= 0.5) // half a second has passed
         {
@@ -127,16 +144,6 @@ int Emu::Apple1::run()
             // Reset the start time.
             QueryPerformanceCounter(&start);
         }
-
-        /*@Todo:
-         Need to slow the 6502 down to approximately 1000 clock cycles per second*/
-        // read input, execute, and output
-        m_cpu.clock();
-        //++clockCount;
-
-        // Check for remaining cycles to run MMIO operations
-        if (m_cpu.getCycles() == 0)
-            this->mmioRegisterMonitor();
     }
 
     return 0;
@@ -156,7 +163,7 @@ char Emu::Apple1::readKeyboard()
         {
             if (vKey == VK_F1)                                                              // Clear screen button
             {
-                system("cls");
+                system("cls");                                                              // @Todo; use anything else but system("cls"), that just runs a console command in the middle of the program, forking anew process i believe
             }
             else
             if(vKey == VK_F2)                                                               // Reset button
@@ -198,7 +205,7 @@ void Emu::Apple1::mmioRegisterMonitor()
 
         if (outputChar == CR)                                                                                       // if it's carriage return 0x8D
         {
-            std::cout << ' ' << std::endl;                                                                          // erase a possible ghost @ cursor
+            std::cout << ' ';                                                                                       // erase a possible ghost @ cursor
             if (++m_cursorPos.Y >= SCREEN_CHAR_HEIGHT) m_cursorPos.Y = 0;                                           // make sure we're within height of the screen
             m_cursorPos.X = 0;                                                                                      // reset x coord
         }
