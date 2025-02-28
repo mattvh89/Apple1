@@ -206,25 +206,26 @@ int Emu::emu6502::loadProgram2(const char* fname, const Word& addr)
 // loads a binary rom
 int emu6502::loadProgramHex(const char* fname, const Word& addr)
 {
-	size_t counter = addr;
-	std::ifstream ifs(fname, std::ios::binary);
-	Byte hex;
+	std::ifstream ifs(fname, std::ios::binary | std::ios::ate); // Open at end to get size
+	if (!ifs) return PROGRAM_LOAD_FAILURE; // Check if file opened successfully
 
-	if (ifs.fail()) return PROGRAM_LOAD_FAILURE;
+	std::streamsize size = ifs.tellg(); // Get file size
+	ifs.seekg(0, std::ios::beg); // Reset to beginning
 
 	try
 	{
-		while (ifs >> hex)
-			m_bus[counter++] = hex;
+		ifs.read(reinterpret_cast<char*>(&m_bus[addr]), size); // Load file in one read operation
 	}
-	catch (std::exception& e)
+	catch (const std::exception& e)
 	{
-		std::cerr << e.what();
-		std::cerr << "Error while reading hex file" << std::endl;
+		std::cerr << "Exception: " << e.what() << std::endl;
+		std::cerr << "Error while reading binary file." << std::endl;
+		return PROGRAM_LOAD_FAILURE;
 	}
-	ifs.close();
-	return PROGRAM_LOAD_SUCCESSFULL;
+
+	return 1;
 }
+
 
 // Strips any leading memory addresses and creates a new file that can be loaded with loadProgram or loadProgram2
 int Emu::emu6502::denatureHexText(const char* fname, const char* fname_new)
@@ -427,10 +428,18 @@ Byte emu6502::IZY()
 Byte emu6502::ADC()
 {
 	DEBUG_OUT("ADC");
+	Word result = 0;
 
 	if (m_instruction.addr != &emu6502::IMM) m_addrVal = busRead(m_addrVal.getCopy());	// check if it's immeidate addressing mode or not
 
-	Word result = m_cpu.a.getCopy() + m_addrVal.getCopy() + m_cpu.flags.CheckBit(Flags::CARRY);
+	if (m_cpu.flags.CheckBit(Flags::DECIMALE_MODE))
+	{
+
+	}
+	else
+	{
+		result = m_cpu.a.getCopy() + m_addrVal.getCopy() + m_cpu.flags.CheckBit(Flags::CARRY);
+	}
 
 	checkFlag(~(m_cpu.a.getCopy() ^ m_addrVal.getCopy()) & (m_cpu.a.getCopy() ^ result) & 0x80, Flags::O_FLOW);
 
