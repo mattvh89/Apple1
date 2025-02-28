@@ -13,10 +13,11 @@ Emu::Apple1::Apple1()
     //m_cpu.denatureHexText("roms/wozmon.txt", "roms/wozmon1.txt");
     //m_cpu.denatureHexText("roms/basic.txt", "roms/basic1.txt");
     //m_cpu.denatureHexText("roms/wozaci.txt", "roms/wozaci1.txt");
-	m_cpu.loadProgram2("roms/basic1.txt", BASIC_ENTRY);                                                 // this is really the A1 assembler
-	m_cpu.loadProgram2("roms/wozaci1.txt", WOZACI_ENTRY);
-	m_cpu.loadProgram2("roms/wozmon1.txt", WOZMON_ENTRY);
-    m_cpu.setProgramCounter(WOZMON_ENTRY);
+    //m_cpu.loadProgramHex("roms/basic.bin", 0x9000);
+	//m_cpu.loadProgram2("roms/basic1.txt", BASIC_ENTRY);                                                 // this is really the A1 assembler
+	//m_cpu.loadProgram2("roms/wozaci1.txt", WOZACI_ENTRY);
+	//m_cpu.loadProgram2("roms/wozmon1.txt", WOZMON_ENTRY);
+ //   m_cpu.setProgramCounter(WOZMON_ENTRY);
 
     m_stdInHandle = GetStdHandle(STD_INPUT_HANDLE);
     m_stdOutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -68,7 +69,7 @@ Emu::Apple1::Apple1()
         for (size_t x = 0; x < SCREEN_CHAR_WIDTH; ++x)
         {
             // Generate a random printable ASCII character (uppercase letters, numbers, and some symbols)
-            char randomChar = static_cast<char>((std::rand() % (126 - 32) + 32)); // Roughly simulates Apple 1 video memory noise
+            char randomChar = std::toupper((std::rand() % (126 - 32) + 32)); // Roughly simulates Apple 1 video memory noise
             std::cout << randomChar;
         }
     }
@@ -96,7 +97,7 @@ int Emu::Apple1::run()
         // if the apple1 has been started but not reset yet it can't do anything
         if (m_onStartup)
         {
-            Sleep(100);
+            //std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
         }
 
@@ -153,6 +154,7 @@ char Emu::Apple1::readKeyboard()
 {
     INPUT_RECORD ir;
     DWORD readCount;
+    bool eProgram = false;
     
     if (PeekConsoleInput(m_stdInHandle, &ir, 1, &readCount) && readCount > 0)
     {
@@ -161,33 +163,46 @@ char Emu::Apple1::readKeyboard()
         WORD vKey = ir.Event.KeyEvent.wVirtualKeyCode;
         if (ir.EventType == KEY_EVENT && ir.Event.KeyEvent.bKeyDown)
         {
-            if (vKey == VK_F1)                                                              // Clear screen button
+            switch (vKey)                                                                   // Clear screen button
             {
+            case VK_F1:
                 system("cls");                                                              // @Todo; use anything else but system("cls"), that just runs a console command in the middle of the program, forking anew process i believe
-            }
-            else
-            if(vKey == VK_F2)                                                               // Reset button
-            {                                                                               // The reset button on the Apple 1 does not clear the ram.
+                break;
+            case VK_F2:                                                                     // Reset button                                                            // The reset button on the Apple 1 does not clear the ram.
                 std::cout << ' ';                                                           // clear the cursor if it's there or it will be left on the screen
                 m_onStartup = false;                                                        // if this is the first time starting, this will stop the program blocking
                 m_cpu.reset();                                                              // reset the cpu
-                m_cpu.loadProgram2("roms/basic1.txt", BASIC_ENTRY);                         // restore the programs incase they were over written
+                m_cpu.loadProgramHex("roms/basic.bin", BASIC_ENTRY);
+                m_cpu.loadProgram2("roms/a1asm.txt",   ASM_ENTRY);                          // restore the programs incase they were over written
                 m_cpu.loadProgram2("roms/wozaci1.txt", WOZACI_ENTRY);
                 m_cpu.loadProgram2("roms/wozmon1.txt", WOZMON_ENTRY);                       // program counter is successfully reset from the reset vector set by the wozmon, 
                                                                                             // so calling m_cpu.reset() properly sets the program counter. Now just reset the cursor
                 m_cursorPos.X = 0;
                 m_cursorPos.Y = 0;
                 SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);
-            }
-            else
-            if(vKey == VK_F3)                                                               // Quit button
-            {
-                m_running = false;
-            }
-            else
-            if(vKey == VK_F4)
-            {
+                break;
+            case VK_F3:                                                                     // throttling
                 m_throttled = !m_throttled;
+                break;
+            case VK_F4:                                                                     // swap basic and assembler
+                if (eProgram)
+                    m_cpu.loadProgramHex("roms/basic.bin", BASIC_ENTRY);
+                else
+                    m_cpu.loadProgram2("roms/a1asm.txt",   BASIC_ENTRY);
+                eProgram = !eProgram;
+                break;
+            case VK_F5:
+                saveState();
+                // @Todo:
+                //      implement save state
+                break;
+            case VK_F6:
+                // @todo:
+                //      implement load save state
+                break;
+            case VK_F12:                                                                    // Quit button
+                m_running = false;
+                break;
             }
             m_cpu.busWrite(KEYBOARD_INPUT_REGISTER, static_cast<Byte>(std::toupper(key)) | 0x80);                   // We have to write the key to the keyboard input register with the last bit set.
 
@@ -219,4 +234,12 @@ void Emu::Apple1::mmioRegisterMonitor()
  
         Bits<Byte>::ClearBit(m_cpu.getBus()[KEYBOARD_CNTRL_REGISTER], LastBit<Byte>);                               // clear the key board control register so the wozmon knows the character has been processed
     }
+}
+
+bool Emu::Apple1::saveState()
+{
+    std::ofstream saveFile("save.dat", std::ios::binary);
+    if (saveFile.fail()) return false;
+    saveFile.write((const char*)m_cpu.getBus(), 0xFFFF);
+    return true;
 }
