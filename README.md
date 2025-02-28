@@ -15,7 +15,7 @@ Thanks for checking out my Apple 1 emulator. This is just a simplified manual to
 The apple 1 starts with the screen buffer full of random values. 
 
 F1 - to clear the screen
-F2 - to reset the emulation
+F2 - to reset the emulation (you might have to hold this down)
 
 You should see a \ and the cursor (@) should drop down.
 
@@ -35,17 +35,33 @@ Type: R <ret>
 And the program should start executing, continually printing all of the characters. Press F2 to reset and then F1 to clear the screen.
 This will clear the program from memory
 
-A1 ASM is stored at E000. Type:
-E000R <ret> to enter the assembler.
+Basic is stored at E000. Type:
+E000R <ret> to enter the basic program.
 
+A test program you can run:
+10 PRINT "HELLO WORLD"
+20 GOTO 10
+RUN 10
+
+You can swap the Basic program with the Apple 1 assembler by pressing F4
+
+Assembler test:
 Enter "NEW" to clear RAM
 Enter "AUTO" to set up automatic lines/memory addressing
 You can now enter 6502 assembly instructions and build a program.
 ESC to stop editing
-Enter: WOZMON <ret> to exit the assembler and go back to the WOZMON.
+Enter: W <ret> to exit the assembler and go back to the WOZMON.
 
 https://www.sbprojects.net/projects/apple1/download.php
 This is where I obtained the ROMS, and also the manual. You should obviously download the manuals so you understand what you can do and how
 to do it. There are a lot of little nuances to the Apple 1 and the A1 assembler.
+
+F3 Toggles throttling of the cpu and monitor
+
+F5 saves the state
+
+F6 Loads the save state
+
+F12 to quit
 
 I hope you enjoy!
