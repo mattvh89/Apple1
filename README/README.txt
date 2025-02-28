@@ -3,6 +3,11 @@ Date: 02/23/2025
 Project: Apple 1 emulator in C++
 Contact: matt.van.helden@hotmail.com
 ------------------------------------------------------------------------------------------------------------------------------------------------
+Recent changes: 
+  Changed the name of the A1 assembler file to a1asm.txt 
+  Added basic.bin
+  The emulator now starts with basic loaded, pressing f4 switches between loading basic and loading a1 asm
+
 
 Thanks for checking out my Apple 1 emulator. This is just a simplified manual to get you up and running. 
 
