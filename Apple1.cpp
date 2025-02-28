@@ -9,16 +9,6 @@
 Emu::Apple1::Apple1()
     : m_cursorPos{ 0, 0 }, m_stdInHandle(NULL), m_stdOutHandle(NULL), m_running(true), m_onStartup(true), m_throttled(true)
 {
-    for (Word i = 0; i < 0xFFFF; ++i) m_cpu.getBus()[i] = 0x00;
-    //m_cpu.denatureHexText("roms/wozmon.txt", "roms/wozmon1.txt");
-    //m_cpu.denatureHexText("roms/basic.txt", "roms/basic1.txt");
-    //m_cpu.denatureHexText("roms/wozaci.txt", "roms/wozaci1.txt");
-    //m_cpu.loadProgramHex("roms/basic.bin", 0x9000);
-	//m_cpu.loadProgram2("roms/basic1.txt", BASIC_ENTRY);                                                 // this is really the A1 assembler
-	//m_cpu.loadProgram2("roms/wozaci1.txt", WOZACI_ENTRY);
-	//m_cpu.loadProgram2("roms/wozmon1.txt", WOZMON_ENTRY);
- //   m_cpu.setProgramCounter(WOZMON_ENTRY);
-
     m_stdInHandle = GetStdHandle(STD_INPUT_HANDLE);
     m_stdOutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
 
@@ -117,16 +107,16 @@ int Emu::Apple1::run()
         // This is how the Apple 1 monitor actually worked too so this is good emulation. F4 toggles this on and off. If off, we need to keep that bit cleared
         if (m_throttled)
         {   // the display ready flag bit should be ready about 10x a minute, so flip it every 5 hundreths of a second
-            if (displayFlagElapsed > .05)
+            if (displayFlagElapsed > .04)
             {
                 Bits<Byte>::ToggleBit(m_cpu.getBus()[DISPLAY_OUTPUT_REGISTER], LastBit<Byte>);  // Toggle the last bit of the display output register. This controls whether the monitor is available or not
                 QueryPerformanceCounter(&displayFlagStart);
             }
             // throttle the cpu to approximately 1000 clock cycles per second, or 100 cycles per .1 seconds
-            if (cpuElapsed > .1)
+            if (cpuElapsed > .2)
             {
-                if (clockCount > 100)
-                    std::this_thread::sleep_for(std::chrono::milliseconds((clockCount - 100)));
+                if (clockCount > 200)
+                    std::this_thread::sleep_for(std::chrono::milliseconds((clockCount - 200)));
                 clockCount = 0;
                 QueryPerformanceCounter(&cpuStart);
             }
@@ -176,7 +166,7 @@ char Emu::Apple1::readKeyboard()
                 m_cpu.loadProgram2("roms/a1asm.txt",   ASM_ENTRY);                          // restore the programs incase they were over written
                 m_cpu.loadProgram2("roms/wozaci1.txt", WOZACI_ENTRY);
                 m_cpu.loadProgram2("roms/wozmon1.txt", WOZMON_ENTRY);                       // program counter is successfully reset from the reset vector set by the wozmon, 
-                                                                                            // so calling m_cpu.reset() properly sets the program counter. Now just reset the cursor
+                m_cpu.loadProgram2("roms/puzz15.txt", GAME_ENTRY);                          // so calling m_cpu.reset() properly sets the program counter. Now just reset the cursor
                 m_cursorPos.X = 0;
                 m_cursorPos.Y = 0;
                 SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);
@@ -193,12 +183,9 @@ char Emu::Apple1::readKeyboard()
                 break;
             case VK_F5:
                 saveState();
-                // @Todo:
-                //      implement save state
                 break;
             case VK_F6:
-                // @todo:
-                //      implement load save state
+                loadState();
                 break;
             case VK_F12:                                                                    // Quit button
                 m_running = false;
@@ -241,5 +228,13 @@ bool Emu::Apple1::saveState()
     std::ofstream saveFile("save.dat", std::ios::binary);
     if (saveFile.fail()) return false;
     saveFile.write((const char*)m_cpu.getBus(), 0xFFFF);
+    return true;
+}
+
+bool Emu::Apple1::loadState()
+{
+    std::ifstream loadFile("save.dat", std::ios::binary);
+    if (loadFile.fail()) return false;
+    loadFile.read((char*)m_cpu.getBus(), 0xFFFF);
     return true;
 }
