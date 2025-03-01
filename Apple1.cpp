@@ -9,6 +9,7 @@
 Emu::Apple1::Apple1()
     : m_cursorPos{ 0, 0 }, m_stdInHandle(NULL), m_stdOutHandle(NULL), m_running(true), m_onStartup(true), m_throttled(true)
 {
+    //m_cpu.denatureHexText("roms/_volks_forth.txt", "roms/volks_forth.txt");
     m_stdInHandle = GetStdHandle(STD_INPUT_HANDLE);
     m_stdOutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
 
@@ -87,7 +88,7 @@ int Emu::Apple1::run()
         // if the apple1 has been started but not reset yet it can't do anything
         if (m_onStartup)
         {
-            //std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
 
@@ -107,7 +108,7 @@ int Emu::Apple1::run()
         // This is how the Apple 1 monitor actually worked too so this is good emulation. F4 toggles this on and off. If off, we need to keep that bit cleared
         if (m_throttled)
         {   // the display ready flag bit should be ready about 10x a minute, so flip it every 5 hundreths of a second
-            if (displayFlagElapsed > .04)
+            if (displayFlagElapsed > .03)
             {
                 Bits<Byte>::ToggleBit(m_cpu.getBus()[DISPLAY_OUTPUT_REGISTER], LastBit<Byte>);  // Toggle the last bit of the display output register. This controls whether the monitor is available or not
                 QueryPerformanceCounter(&displayFlagStart);
@@ -157,7 +158,7 @@ char Emu::Apple1::readKeyboard()
             {
             case VK_F1:
                 system("cls");                                                              // @Todo; use anything else but system("cls"), that just runs a console command in the middle of the program, forking anew process i believe
-                break;
+                return 0;
             case VK_F2:                                                                     // Reset button                                                            // The reset button on the Apple 1 does not clear the ram.
                 std::cout << ' ';                                                           // clear the cursor if it's there or it will be left on the screen
                 m_onStartup = false;                                                        // if this is the first time starting, this will stop the program blocking
@@ -166,30 +167,37 @@ char Emu::Apple1::readKeyboard()
                 m_cpu.loadProgram2("roms/a1asm.txt",   ASM_ENTRY);                          // restore the programs incase they were over written
                 m_cpu.loadProgram2("roms/wozaci1.txt", WOZACI_ENTRY);
                 m_cpu.loadProgram2("roms/wozmon1.txt", WOZMON_ENTRY);                       // program counter is successfully reset from the reset vector set by the wozmon, 
-                m_cpu.loadProgram2("roms/puzz15.txt", GAME_ENTRY);                          // so calling m_cpu.reset() properly sets the program counter. Now just reset the cursor
+                m_cpu.loadProgram2("roms/puzz15.txt",  GAME_ENTRY);                     // so calling m_cpu.reset() properly sets the program counter. Now just reset the cursor
                 m_cursorPos.X = 0;
                 m_cursorPos.Y = 0;
                 SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);
-                break;
+                return 0;
             case VK_F3:                                                                     // throttling
                 m_throttled = !m_throttled;
-                break;
+                return 0;
             case VK_F4:                                                                     // swap basic and assembler
                 if (eProgram)
                     m_cpu.loadProgramHex("roms/basic.bin", BASIC_ENTRY);
                 else
                     m_cpu.loadProgram2("roms/a1asm.txt",   BASIC_ENTRY);
                 eProgram = !eProgram;
-                break;
+                return 0;
             case VK_F5:
                 saveState();
-                break;
+                return 0;
             case VK_F6:
                 loadState();
-                break;
+                return 0;
+            case VK_F7:
+                m_cpu.loadProgram2("roms/chcckers_4A_FF.txt", 0x004A);
+                m_cpu.loadProgram2("roms/checkers_0300_0FFF.txt", 0x0300);
+                return 0;
+            case VK_F8:
+                m_cpu.loadProgram2("roms/volks_forth.txt", FORTH_ENTRY);
+                return 0;
             case VK_F12:                                                                    // Quit button
                 m_running = false;
-                break;
+                return 1;
             }
             m_cpu.busWrite(KEYBOARD_INPUT_REGISTER, static_cast<Byte>(std::toupper(key)) | 0x80);                   // We have to write the key to the keyboard input register with the last bit set.
 
@@ -220,6 +228,8 @@ void Emu::Apple1::mmioRegisterMonitor()
         SetConsoleCursorPosition(m_stdOutHandle, m_cursorPos);                                                      // set the cursor the cursor pos
  
         Bits<Byte>::ClearBit(m_cpu.getBus()[KEYBOARD_CNTRL_REGISTER], LastBit<Byte>);                               // clear the key board control register so the wozmon knows the character has been processed
+
+        m_cpu.busWrite(KEYBOARD_INPUT_REGISTER, 0x00);
     }
 }
 
