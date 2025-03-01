@@ -1,0 +1,39 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up CMake
+      uses: actions/setup-cmake@v3
+      with:
+        cmake-version: '3.21.1'  # Specify the CMake version you need, adjust if necessary
+    
+    - name: Create build directory
+      run: mkdir -p build && cd build
+    
+    - name: Configure CMake
+      run: cmake ..
+    
+    - name: Build project
+      run: cmake --build build --parallel 2  # Adjust parallelism based on your needs
+    
+    - name: Run tests
+      run: cmake --build build --target test  # Assumes you have tests set up in CMake
+    
+    - name: Check build
+      run: cmake --build build --target install  # Runs the install target if defined
+    
+    - name: Make distcheck (if applicable)
+      run: cmake --build build --target package  # Run if you have a package/installer target
